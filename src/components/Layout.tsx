@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, Star, Shield } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Menu, X, Star, Shield, User, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/hooks/useAuth';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -20,8 +21,15 @@ const navigationItems = [
 export default function Layout({ children }: LayoutProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, signOut, loading } = useAuth();
 
   const isActivePath = (path: string) => location.pathname === path;
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/');
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -55,6 +63,25 @@ export default function Layout({ children }: LayoutProps) {
                   {item.name}
                 </Link>
               ))}
+              
+              {!loading && (
+                user ? (
+                  <div className="flex items-center space-x-3 ml-4 pl-4 border-l border-border">
+                    <div className="flex items-center space-x-2 text-sm">
+                      <User className="w-4 h-4" />
+                      <span className="text-muted-foreground">{user.email}</span>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={handleSignOut}>
+                      <LogOut className="w-4 h-4 mr-2" />
+                      Sign Out
+                    </Button>
+                  </div>
+                ) : (
+                  <Button variant="hero" size="sm" asChild className="ml-4">
+                    <Link to="/auth">Sign In</Link>
+                  </Button>
+                )
+              )}
             </nav>
 
             {/* Mobile Menu Button */}
@@ -91,6 +118,37 @@ export default function Layout({ children }: LayoutProps) {
                     {item.name}
                   </Link>
                 ))}
+                
+                {!loading && (
+                  user ? (
+                    <div className="border-t pt-4 mt-4">
+                      <div className="flex items-center space-x-2 px-2 py-2 text-sm text-muted-foreground">
+                        <User className="w-4 h-4" />
+                        <span>{user.email}</span>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          handleSignOut();
+                          setIsMobileMenuOpen(false);
+                        }} 
+                        className="flex items-center space-x-2 px-2 py-2 w-full text-left hover:bg-muted rounded-md"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Sign Out</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="border-t pt-4 mt-4">
+                      <Link 
+                        to="/auth" 
+                        onClick={() => setIsMobileMenuOpen(false)} 
+                        className="block px-2 py-2 hover:bg-muted rounded-md"
+                      >
+                        Sign In
+                      </Link>
+                    </div>
+                  )
+                )}
               </nav>
             </div>
           )}

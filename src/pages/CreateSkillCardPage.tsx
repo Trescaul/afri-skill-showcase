@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -7,6 +8,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Upload, CreditCard, Shield, Star, CheckCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
 
 const skillCategories = [
   'Carpentry',
@@ -29,6 +32,8 @@ const skillCategories = [
 
 export default function CreateSkillCardPage() {
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const { user, loading } = useAuth();
   const [formData, setFormData] = useState({
     fullName: '',
     skillCategory: '',
@@ -39,6 +44,13 @@ export default function CreateSkillCardPage() {
     profilePhoto: null as File | null,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Redirect to auth if not logged in
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate('/auth');
+    }
+  }, [user, loading, navigate]);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -98,18 +110,29 @@ export default function CreateSkillCardPage() {
     setIsSubmitting(true);
 
     try {
-      // Here we would normally:
-      // 1. Upload the photo
-      // 2. Process payment via Mpesa
-      // 3. Create the skill card in database
-      // 4. Send confirmation
+      // Create the skill card in database
+      const { error } = await supabase
+        .from('skill_cards')
+        .insert({
+          name: formData.fullName,
+          skill_category: formData.skillCategory,
+          bio: formData.bio,
+          location: formData.location,
+          phone: formData.phone,
+          email: formData.email || user?.email || '',
+          user_id: user?.id,
+          payment_status: 'pending',
+          verified: false,
+          star_rating: 1,
+        });
 
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      if (error) {
+        throw error;
+      }
       
       toast({
         title: "Success!",
-        description: "Your skill card has been created and you'll receive an Mpesa prompt shortly.",
+        description: "Your skill card has been created! Payment integration will be added soon.",
       });
 
       // Reset form
@@ -122,17 +145,37 @@ export default function CreateSkillCardPage() {
         email: '',
         profilePhoto: null,
       });
+
+      // Navigate to gallery after success
+      setTimeout(() => {
+        navigate('/gallery');
+      }, 2000);
       
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Error creating skill card:', error);
       toast({
         title: "Error",
-        description: "Failed to create skill card. Please try again.",
+        description: error.message || "Failed to create skill card. Please try again.",
         variant: "destructive",
       });
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  // Show loading if auth is still loading
+  if (loading) {
+    return (
+      <div className="container mx-auto px-4 py-16 text-center">
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  // This shouldn't render if user is not logged in due to useEffect redirect
+  if (!user) {
+    return null;
+  }
 
   return (
     <div className="container mx-auto px-4 py-16 max-w-4xl">
