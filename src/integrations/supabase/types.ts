@@ -94,6 +94,7 @@ export type Database = {
           created_at: string
           currency: string | null
           id: string
+          metadata: Json | null
           payment_method: string
           payment_reference: string | null
           skill_card_id: string | null
@@ -106,6 +107,7 @@ export type Database = {
           created_at?: string
           currency?: string | null
           id?: string
+          metadata?: Json | null
           payment_method: string
           payment_reference?: string | null
           skill_card_id?: string | null
@@ -118,6 +120,7 @@ export type Database = {
           created_at?: string
           currency?: string | null
           id?: string
+          metadata?: Json | null
           payment_method?: string
           payment_reference?: string | null
           skill_card_id?: string | null
@@ -194,7 +197,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      create_skill_card_from_payment: {
+        Args: { payment_id: string }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

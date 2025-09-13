@@ -44,6 +44,8 @@ export default function CreateSkillCardPage() {
     profilePhoto: null as File | null,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'pending' | 'completed' | 'failed'>('idle');
+  const [paymentId, setPaymentId] = useState<string | null>(null);
 
   // Redirect to auth if not logged in
   useEffect(() => {
@@ -85,6 +87,92 @@ export default function CreateSkillCardPage() {
     }
   };
 
+  // Poll payment status
+  const pollPaymentStatus = async (paymentId: string) => {
+    const maxAttempts = 30; // Poll for 5 minutes (30 * 10 seconds)
+    let attempts = 0;
+
+    const poll = async () => {
+      try {
+        const response = await fetch(
+          `https://hjsbrauutylvyyxpvglr.supabase.co/functions/v1/check-payment-status?paymentId=${paymentId}`,
+          {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhqc2JyYXV1dHlsdnl5eHB2Z2xyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc2MDQ1NTUsImV4cCI6MjA3MzE4MDU1NX0.KwVlouXAuGo4bpd2ozVlNFtHEUB3VTVwW_om86Ss_2o`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+
+        if (!response.ok) throw new Error('Failed to check payment status');
+        const result = await response.json();
+        
+        if (result.status === 'completed' && result.skillCardCreated) {
+          setPaymentStatus('completed');
+          toast({
+            title: "Payment Successful!",
+            description: "Your skill card has been created and is now live in the gallery.",
+          });
+          
+          // Reset form
+          setFormData({
+            fullName: '',
+            skillCategory: '',
+            bio: '',
+            location: '',
+            phone: '',
+            email: '',
+            profilePhoto: null,
+          });
+          
+          // Navigate to gallery after success
+          setTimeout(() => {
+            navigate('/gallery');
+          }, 3000);
+          return;
+        } else if (result.status === 'failed') {
+          setPaymentStatus('failed');
+          toast({
+            title: "Payment Failed",
+            description: "Your Mpesa payment was not successful. Please try again.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Continue polling if still pending
+        attempts++;
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 10000); // Poll every 10 seconds
+        } else {
+          setPaymentStatus('failed');
+          toast({
+            title: "Payment Timeout",
+            description: "Payment verification timed out. Please contact support if you were charged.",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        console.error('Error polling payment status:', error);
+        attempts++;
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 10000);
+        } else {
+          setPaymentStatus('failed');
+          toast({
+            title: "Verification Error",
+            description: "Unable to verify payment status. Please contact support.",
+            variant: "destructive",
+          });
+        }
+      }
+    };
+
+    // Start polling
+    setTimeout(poll, 5000); // Wait 5 seconds before first poll
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -108,54 +196,52 @@ export default function CreateSkillCardPage() {
     }
 
     setIsSubmitting(true);
+    setPaymentStatus('pending');
 
     try {
-      // Create the skill card in database
-      const { error } = await supabase
-        .from('skill_cards')
-        .insert({
-          name: formData.fullName,
-          skill_category: formData.skillCategory,
-          bio: formData.bio,
-          location: formData.location,
+      // Prepare skill card data
+      const skillCardData = {
+        name: formData.fullName,
+        skill_category: formData.skillCategory,
+        bio: formData.bio,
+        location: formData.location,
+        phone: formData.phone,
+        email: formData.email || user?.email || '',
+        user_id: user?.id,
+      };
+
+      // Initiate Mpesa STK Push
+      const { data, error } = await supabase.functions.invoke('mpesa-payment', {
+        body: {
           phone: formData.phone,
-          email: formData.email || user?.email || '',
-          user_id: user?.id,
-          payment_status: 'pending',
-          verified: false,
-          star_rating: 1,
-        });
+          amount: 100,
+          skillCardData,
+        },
+      });
 
       if (error) {
         throw error;
       }
-      
-      toast({
-        title: "Success!",
-        description: "Your skill card has been created! Payment integration will be added soon.",
-      });
 
-      // Reset form
-      setFormData({
-        fullName: '',
-        skillCategory: '',
-        bio: '',
-        location: '',
-        phone: '',
-        email: '',
-        profilePhoto: null,
-      });
-
-      // Navigate to gallery after success
-      setTimeout(() => {
-        navigate('/gallery');
-      }, 2000);
+      if (data.success) {
+        setPaymentId(data.paymentId);
+        toast({
+          title: "Payment Request Sent",
+          description: "Please check your phone and enter your Mpesa PIN to complete payment.",
+        });
+        
+        // Start polling payment status
+        pollPaymentStatus(data.paymentId);
+      } else {
+        throw new Error(data.error || 'Failed to initiate payment');
+      }
       
     } catch (error: any) {
-      console.error('Error creating skill card:', error);
+      console.error('Error initiating payment:', error);
+      setPaymentStatus('failed');
       toast({
-        title: "Error",
-        description: error.message || "Failed to create skill card. Please try again.",
+        title: "Payment Error",
+        description: error.message || "Failed to initiate Mpesa payment. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -316,20 +402,56 @@ export default function CreateSkillCardPage() {
                   </div>
                 </div>
 
+                {/* Payment Status */}
+                {paymentStatus !== 'idle' && (
+                  <div className={`p-4 rounded-lg border ${
+                    paymentStatus === 'pending' ? 'bg-blue-50 border-blue-200' :
+                    paymentStatus === 'completed' ? 'bg-green-50 border-green-200' :
+                    'bg-red-50 border-red-200'
+                  }`}>
+                    <div className="flex items-center space-x-2">
+                      {paymentStatus === 'pending' && (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                          <span className="text-blue-800 font-medium">Waiting for Mpesa payment...</span>
+                        </>
+                      )}
+                      {paymentStatus === 'completed' && (
+                        <>
+                          <CheckCircle className="w-4 h-4 text-green-600" />
+                          <span className="text-green-800 font-medium">Payment successful! Skill card created.</span>
+                        </>
+                      )}
+                      {paymentStatus === 'failed' && (
+                        <>
+                          <span className="text-red-800 font-medium">Payment failed. Please try again.</span>
+                        </>
+                      )}
+                    </div>
+                    {paymentStatus === 'pending' && (
+                      <p className="text-sm text-blue-600 mt-2">
+                        Check your phone for the Mpesa prompt. This may take a few minutes to process.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* Submit Button */}
                 <Button 
                   type="submit" 
                   variant="hero" 
                   size="lg" 
                   className="w-full"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || paymentStatus === 'pending'}
                 >
                   {isSubmitting ? (
                     <>Processing...</>
+                  ) : paymentStatus === 'pending' ? (
+                    <>Waiting for payment...</>
                   ) : (
                     <>
                       <CreditCard className="w-4 h-4 mr-2" />
-                      Create Skill Card (100 KES)
+                      Pay with Mpesa (100 KES)
                     </>
                   )}
                 </Button>

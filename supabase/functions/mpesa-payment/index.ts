@@ -148,18 +148,7 @@ async function initiateSTKPush(phone: string, amount: number, skillCardData: any
       .from('payments')
       .update({
         payment_reference: responseData.CheckoutRequestID,
-        // Store skill card data as metadata
-        // We'll create the actual skill card only after successful payment
-      })
-      .eq('id', paymentData.id);
-
-    // Store skill card data in a temporary table or as metadata
-    // For now, we'll store it in the payment record as JSON
-    const skillCardJson = JSON.stringify(skillCardData);
-    await supabase
-      .from('payments')
-      .update({
-        // Add a metadata column or use existing column to store skill card data
+        metadata: { skillCardData }
       })
       .eq('id', paymentData.id);
   }
@@ -200,9 +189,19 @@ async function handleMpesaCallback(callbackData: MpesaCallback): Promise<void> {
       .update({ status: 'completed' })
       .eq('id', payment.id);
 
-    // TODO: Create skill card from stored data
-    // For now, we'll need to retrieve the skill card data that was stored
-    // This requires modifying the payments table to store skill card metadata
+    // Create skill card from payment metadata
+    try {
+      const { data: skillCardId, error: skillCardError } = await supabase
+        .rpc('create_skill_card_from_payment', { payment_id: payment.id });
+      
+      if (skillCardError) {
+        console.error('Error creating skill card:', skillCardError);
+      } else {
+        console.log('Skill card created successfully:', skillCardId);
+      }
+    } catch (error) {
+      console.error('Failed to create skill card:', error);
+    }
     
   } else {
     // Payment failed
